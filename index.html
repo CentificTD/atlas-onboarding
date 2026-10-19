@@ -425,11 +425,11 @@ var WELCOME_BODY =
   + '<li><strong>Start on the Learning Path tab.</strong> It lists every module in order. The next module you can open is highlighted. Modules further down are locked until you finish the one before.</li>'
   + '<li><strong>Open a module and read it.</strong> Take your time. You can scroll back up at any point.</li>'
   + '<li><strong>Press &ldquo;Start knowledge check&rdquo; when you reach the end.</strong> Some modules, like this one, have no check. For those, press &ldquo;Mark complete&rdquo; instead.</li>'
-  + '<li><strong>Answer one question at a time.</strong> Select your answer. Once you select it, it is final and cannot be changed. Press &ldquo;Next question&rdquo;, and press &ldquo;Finish check&rdquo; on the last one.</li>'
-  + '<li><strong>See your result.</strong> The screen shows your score and the pass mark. If you do not reach it, press &ldquo;Retry the check&rdquo;. You can retry as many times as you need.</li>'
-  + '<li><strong>Press &ldquo;Continue to next module&rdquo;</strong> once you have passed.</li>'
+  + '<li><strong>Answer one question at a time.</strong> Select your answer. If it is wrong, you can try again until you get it right, but only your first pick counts toward your score. Press &ldquo;Next question&rdquo;, and press &ldquo;Finish check&rdquo; on the last one.</li>'
+  + '<li><strong>See your result.</strong> The screen shows your score. Module checks have no pass mark, so you can always continue. Your score is recorded, and you can press &ldquo;Retry the check&rdquo; to go through the questions again.</li>'
+  + '<li><strong>Press &ldquo;Continue to next module&rdquo;</strong> once you have finished the check.</li>'
   + '</ol>'
-  + '<div class="callout"><div class="c-ic">&#9432;</div><div class="c-tx"><strong>Answers lock when you select them.</strong> Read each question and every answer choice before you choose.</div></div>'
+  + '<div class="callout"><div class="c-ic">&#9432;</div><div class="c-tx"><strong>Only your first pick counts.</strong> Read each question and every answer choice before you choose.</div></div>'
   + '<h2>The final assessment</h2>'
   + '<p>The final assessment unlocks after the last module. It has more questions than a module check and a limited number of attempts, which the screen shows before you begin. Your time starts when you press &ldquo;Begin&rdquo;, so only begin when you are ready to finish in one sitting. If you use all your attempts, the screen tells you who to contact.</p>'
   + '<h2>Your time is recorded</h2>'
@@ -1098,7 +1098,7 @@ const RESOURCES = [
 </script>
 <script>
 // ── VERSION (MAJOR.MINOR.MMDDYY) ────────────────────────────────────────────
-const APP_VERSION = 'v0.2.0.101926-atlas';
+const APP_VERSION = 'v0.2.2.101926-atlas';
 
 // ── BACKEND CONFIG ───────────────────────────────────────────────────────────
 // SHELL MODE: all empty, so LIVE is false and the app runs on the demo adapter below.
@@ -1750,7 +1750,7 @@ function renderQuiz(m, done){
   if(!QZ.started){
     return '<div class="quiz-card"><div class="quiz-progress">Knowledge check &middot; ' + qs.length + ' questions ' + (done ? '<span class="pill pill-green pill-sm">&#10003; Completed</span>' : '') + '</div>'
       + '<div class="quiz-q" style="margin-bottom:8px">' + (done ? 'Take the check again as a refresher.' : 'Ready to check what you learned?') + '</div>'
-      + '<p class="muted" style="font-size:13.5px;line-height:1.55;margin:0 0 16px">One question at a time. ' + (CHECK_MODE === 'lenient' ? 'A wrong pick lets you try again, but only your first pick counts toward the score.' : '<strong>Once you select an answer it is locked.</strong> To change an answer you have to retry the whole check.') + ' You need ' + CHECK_PASS_PCT + '% to pass and can retry as often as you like. Every attempt is timed on its own.' + (done ? ' Time on a repeat is logged as review.' : '') + '</p>'
+      + '<p class="muted" style="font-size:13.5px;line-height:1.55;margin:0 0 16px">One question at a time. ' + (CHECK_MODE === 'lenient' ? 'A wrong pick lets you try again, but only your first pick counts toward the score.' : '<strong>Once you select an answer it is locked.</strong> To change an answer you have to retry the whole check.') + (CHECK_PASS_PCT > 0 ? ' You need ' + CHECK_PASS_PCT + '% to pass and can retry as often as you like.' : ' There is no pass mark on module checks. Your score is recorded, and you can retry as often as you like.') + ' Every attempt is timed on its own.' + (done ? ' Time on a repeat is logged as review.' : '') + '</p>'
       + '<button class="btn btn-primary" style="width:auto" onclick="startQuiz()">' + (done ? 'Retry the check' : 'Start knowledge check') + ' &rarr;</button></div>';
   }
   if(QZ.finished){
@@ -2138,9 +2138,18 @@ function curCard(key, icon, title, meta, pillHtml, bodyHtml){
 }
 function vCurriculum(){
   const phCount = arr => arr.filter(q => String(q.q).indexOf('[PLACEHOLDER]') >= 0).length;
-  const phPill = ph => ph ? '<span class="pill pill-amber pill-sm">Placeholder content</span>' : '<span class="pill pill-green pill-sm">Content added</span>';
+  // Content state: none open = Content added; a few open items inside real content = Partly developed; mostly untouched = Placeholder content
+  const phIn = s => (String(s).match(/\[PLACEHOLDER\]/g) || []).length;
+  const phState = (body, qs) => {
+    const n = phIn(body) + phCount(qs), allQ = qs.length > 0 && phCount(qs) === qs.length;
+    if(!n) return {k:'done', n:0};
+    return {k: (phIn(body) >= 3 || allQ) ? 'ph' : 'part', n:n};
+  };
+  const phPill = st => st.k === 'done' ? '<span class="pill pill-green pill-sm">Content added</span>'
+    : st.k === 'part' ? '<span class="pill pill-blue pill-sm" title="Content added, with ' + st.n + ' open item' + (st.n > 1 ? 's' : '') + ' still to confirm">Partly developed</span>'
+    : '<span class="pill pill-amber pill-sm">Placeholder content</span>';
   const rows = ATLAS_MODULES.map((m, i) => {
-    const qs = getModQuestions(m.id), ph = String(m.body).indexOf('[PLACEHOLDER]') >= 0 || phCount(qs) > 0;
+    const qs = getModQuestions(m.id), ph = phState(m.body, qs);
     const meta = '~' + m.min + ' min &middot; ' + (m.gate === 'check' ? qs.length + ' check questions' : 'no check, "' + esc(m.cta || 'Mark complete') + '"');
     const body = '<div class="cur-sec">Module content</div><div class="cur-content reader">' + m.body + '</div>'
       + (qs.length ? '<div class="cur-sec">Knowledge check &middot; ' + qs.length + ' questions</div>' + curQuestionsHtml(qs, m.id)
@@ -2148,7 +2157,7 @@ function vCurriculum(){
     return curCard(m.id, m.ic, (i+1) + '. ' + esc(m.title), meta, phPill(ph), body);
   }).join('');
   const fbody = '<div class="cur-sec">Final assessment &middot; ' + FINAL_CHECK.length + ' questions</div>' + curQuestionsHtml(FINAL_CHECK, 'final');
-  const fcard = curCard('final', '&#127919;', 'Final assessment', FINAL_CHECK.length + ' questions &middot; ' + FINAL_PASS_PCT + '% to pass &middot; ' + FINAL_MAX_ATTEMPTS + ' attempts, then lockout; admin can grant more', phPill(phCount(FINAL_CHECK) > 0), fbody);
+  const fcard = curCard('final', '&#127919;', 'Final assessment', FINAL_CHECK.length + ' questions &middot; ' + FINAL_PASS_PCT + '% to pass &middot; ' + FINAL_MAX_ATTEMPTS + ' attempts, then lockout; admin can grant more', phPill(phState('', FINAL_CHECK)), fbody);
   return '<h1 class="page-h1">Curriculum</h1><p class="page-sub">' + ATLAS_MODULES.length + ' modules in locked order, then the final assessment. Click a module to see what moderators see, with its questions and answer choices to flip through. Read-only here: content is edited in the content block at the top of the app file.</p>'
     + '<div class="cur-tools"><button class="btn btn-ghost" onclick="curAll(true)">Expand all</button><button class="btn btn-ghost" onclick="curAll(false)">Collapse all</button></div>' + rows + fcard;
 }
